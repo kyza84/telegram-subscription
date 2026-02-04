@@ -45,6 +45,7 @@ async def init_db() -> None:
                 purchases_count INTEGER NOT NULL DEFAULT 0,
                 last_city_id INTEGER,
                 last_area_id INTEGER,
+                support_blocked INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -152,6 +153,11 @@ async def init_db() -> None:
                 )
             if not await _table_has_column(db, "products", "sold_at"):
                 await db.execute("ALTER TABLE products ADD COLUMN sold_at TEXT")
+        if await _table_exists(db, "users"):
+            if not await _table_has_column(db, "users", "support_blocked"):
+                await db.execute(
+                    "ALTER TABLE users ADD COLUMN support_blocked INTEGER NOT NULL DEFAULT 0"
+                )
 
         await _seed_cities_and_areas(db)
         await db.commit()
@@ -165,7 +171,7 @@ async def _seed_cities_and_areas(db: aiosqlite.Connection) -> None:
     if count_row and int(count_row[0]) == 0:
         await db.executemany(
             "INSERT INTO cities (name) VALUES (?)",
-            [("City 1",), ("City 2",)],
+            [("City 1",)],
         )
 
     cur = await db.execute("SELECT id FROM cities ORDER BY id")
@@ -179,6 +185,21 @@ async def _seed_cities_and_areas(db: aiosqlite.Connection) -> None:
                 "INSERT OR IGNORE INTO areas (city_id, name) VALUES (?, ?)",
                 (city_id, area_name),
             )
+
+    # Optional cleanup of default City 2 if it exists and has no products
+    cur = await db.execute("SELECT id FROM cities WHERE name = ?", ("City 2",))
+    city2 = await cur.fetchone()
+    await cur.close()
+    if city2:
+        city2_id = int(city2[0])
+        cur = await db.execute(
+            "SELECT COUNT(*) FROM products WHERE city_id = ?",
+            (city2_id,),
+        )
+        cnt_row = await cur.fetchone()
+        await cur.close()
+        if cnt_row and int(cnt_row[0]) == 0:
+            await db.execute("DELETE FROM cities WHERE id = ?", (city2_id,))
 
 
 async def _fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[aiosqlite.Row]:
@@ -222,8 +243,15 @@ async def upsert_user(tg_id: int, username: str | None, first_name: str | None) 
 
 async def get_user(tg_id: int) -> aiosqlite.Row | None:
     return await _fetch_one(
-        "SELECT tg_id, username, first_name, purchases_count, last_city_id, last_area_id FROM users WHERE tg_id = ?",
+        "SELECT tg_id, username, first_name, purchases_count, last_city_id, last_area_id, support_blocked FROM users WHERE tg_id = ?",
         (tg_id,),
+    )
+
+
+async def set_support_blocked(tg_id: int, blocked: int = 1) -> None:
+    await _execute(
+        "UPDATE users SET support_blocked = ? WHERE tg_id = ?",
+        (blocked, tg_id),
     )
 
 
@@ -340,6 +368,7 @@ async def get_products_filtered(
         SELECT id, title, description, price, photo_file_id, stock
         FROM products
         WHERE city_id = ? AND area_id = ? AND variant = ? AND class = ? AND is_active = 1
+          AND COALESCE(stock, 0) >= 1
         ORDER BY id DESC
         """,
         (city_id, area_id, variant, class_name),
@@ -368,6 +397,40 @@ async def get_product_owner(product_id: int) -> aiosqlite.Row | None:
         """,
         (product_id,),
     )
+
+
+async def list_products(limit: int = 50) -> list[aiosqlite.Row]:
+    return await _fetch_all(
+        """
+        SELECT id, title, price, stock, is_active, sold_to_user_id
+        FROM products
+        WHERE is_active = 1 AND COALESCE(stock, 0) >= 1
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+
+async def delete_product(product_id: int) -> None:
+    await _execute("DELETE FROM products WHERE id = ?", (product_id,))
+
+
+async def add_city(name: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("INSERT INTO cities (name) VALUES (?)", (name,))
+        city_id = int(cur.lastrowid)
+        for area_name in AREAS:
+            await db.execute(
+                "INSERT OR IGNORE INTO areas (city_id, name) VALUES (?, ?)",
+                (city_id, area_name),
+            )
+        await db.commit()
+        return city_id
+
+
+async def delete_city(city_id: int) -> None:
+    await _execute("DELETE FROM cities WHERE id = ?", (city_id,))
 
 
 async def add_to_cart(user_id: int, product_id: int) -> bool:

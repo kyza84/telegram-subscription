@@ -77,12 +77,17 @@ class Buttons:
     I_PAID: str = "Я оплатил"
 
     ADMIN_ADD_PRODUCT: str = "Добавить товар"
+    ADMIN_ADD_CITY: str = "Добавить город"
+    ADMIN_DELETE_CITY: str = "Удалить город"
     ADMIN_RENAME_CITY: str = "Переименовать город"
     ADMIN_RENAME_PRODUCT: str = "Переименовать товар"
     ADMIN_VARIANT_PHOTO: str = "Фото варианта"
     ADMIN_USER_HISTORY: str = "История покупок"
     ADMIN_REVIEWS: str = "Отзывы"
     ADMIN_PRODUCT_OWNER: str = "Кто купил товар"
+    ADMIN_PRODUCTS_LIST: str = "Ассортимент"
+    ADMIN_PRODUCT_DELETE: str = "Удалить товар"
+    ADMIN_LOGS: str = "Логи"
     ADMIN_REQUESTS: str = "Заявки"
     ADMIN_STATS: str = "Статистика"
 

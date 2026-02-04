@@ -373,6 +373,13 @@ async def payment_photo_required(message: Message) -> None:
 async def support(message: Message, state: FSMContext) -> None:
     user = await db.get_user(message.from_user.id)
     purchases = int(user["purchases_count"]) if user else 0
+    blocked = int(user["support_blocked"]) if user else 0
+    if blocked:
+        await message.answer(
+            "Поддержка для вашего аккаунта закрыта.",
+            reply_markup=main_menu_kb(),
+        )
+        return
     if purchases <= 0:
         await message.answer(
             "Поддержка доступна после первой покупки/оплаты.",
@@ -390,6 +397,14 @@ async def support(message: Message, state: FSMContext) -> None:
 async def support_after_payment(callback: CallbackQuery, state: FSMContext) -> None:
     user = await db.get_user(callback.from_user.id)
     purchases = int(user["purchases_count"]) if user else 0
+    blocked = int(user["support_blocked"]) if user else 0
+    if blocked:
+        await callback.message.answer(
+            "Поддержка для вашего аккаунта закрыта.",
+            reply_markup=main_menu_kb(),
+        )
+        await callback.answer()
+        return
     if purchases <= 0:
         await callback.message.answer(
             "Поддержка доступна после первой покупки/оплаты.",
@@ -417,6 +432,14 @@ async def support_back(message: Message, state: FSMContext) -> None:
 async def support_message(message: Message, state: FSMContext) -> None:
     user = await db.get_user(message.from_user.id)
     purchases = int(user["purchases_count"]) if user else 0
+    blocked = int(user["support_blocked"]) if user else 0
+    if blocked:
+        await state.clear()
+        await message.answer(
+            "Поддержка для вашего аккаунта закрыта.",
+            reply_markup=main_menu_kb(),
+        )
+        return
     if purchases <= 0:
         await state.clear()
         await message.answer(
@@ -465,23 +488,48 @@ async def support_message(message: Message, state: FSMContext) -> None:
 
     sent_ids: list[int] = []
 
-    if message.photo:
-        media_msg = await message.bot.send_photo(
-            ADMIN_GROUP_ID,
-            photo=message.photo[-1].file_id,
-            caption="Фото от пользователя",
-        )
-        sent_ids.append(media_msg.message_id)
-    if message.document:
-        media_msg = await message.bot.send_document(
-            ADMIN_GROUP_ID,
-            document=message.document.file_id,
-            caption="Документ от пользователя",
-        )
-        sent_ids.append(media_msg.message_id)
+    try:
+        if message.photo:
+            media_msg = await message.bot.send_photo(
+                ADMIN_GROUP_ID,
+                photo=message.photo[-1].file_id,
+                caption="Фото от пользователя",
+            )
+            sent_ids.append(media_msg.message_id)
+        if message.document:
+            media_msg = await message.bot.send_document(
+                ADMIN_GROUP_ID,
+                document=message.document.file_id,
+                caption="Документ от пользователя",
+            )
+            sent_ids.append(media_msg.message_id)
 
-    info_msg = await message.bot.send_message(ADMIN_GROUP_ID, info)
-    sent_ids.append(info_msg.message_id)
+        info_msg = await message.bot.send_message(
+            ADMIN_GROUP_ID,
+            info,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [
+                        InlineKeyboardButton(
+                            text="Закрыть чат",
+                            callback_data="support:close",
+                        ),
+                        InlineKeyboardButton(
+                            text="Закрыть навсегда",
+                            callback_data=f"support:block:{message.from_user.id}",
+                        ),
+                    ]
+                ]
+            ),
+        )
+        sent_ids.append(info_msg.message_id)
+    except Exception:
+        await message.answer(
+            "Не удалось отправить сообщение в поддержку. "
+            "Проверьте, что бот добавлен в админ-группу и имеет права администратора.",
+            reply_markup=main_menu_kb(),
+        )
+        return
 
     for mid in sent_ids:
         await db.save_support_thread(
@@ -491,7 +539,6 @@ async def support_message(message: Message, state: FSMContext) -> None:
         )
 
     await message.answer("Принято. Мы ответим здесь.", reply_markup=main_menu_kb())
-    await state.clear()
 
 
 @router.message(UserStates.waiting_support_message)

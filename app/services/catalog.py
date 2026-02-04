@@ -4,7 +4,7 @@ from typing import Iterable
 
 
 def format_price(price: int) -> str:
-    return f"{price} руб."
+    return f"{price} грн"
 
 
 def product_caption(product: dict) -> str:
