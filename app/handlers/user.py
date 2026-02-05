@@ -14,7 +14,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.config import ADMIN_GROUP_ID, BTN, CLASSES, PAYMENT_DETAILS, SUPPORT_TEXT, VARIANTS
+from app.config import ADMIN_GROUP_ID, BTN, PAYMENT_DETAILS, SUPPORT_TEXT
 from app.db import database as db
 from app.services.catalog import build_cart_text, format_price
 
@@ -54,18 +54,19 @@ def areas_kb(areas: list[dict]) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def variants_kb() -> InlineKeyboardMarkup:
+def variants_kb(variants: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for variant in VARIANTS:
-        builder.button(text=f"Товар {variant}", callback_data=f"variant:{variant}")
+    for variant in variants:
+        name = variant["name"]
+        builder.button(text=f"Товар {name}", callback_data=f"variant:{name}")
     builder.button(text=BTN.BACK, callback_data="back:areas")
     builder.adjust(2)
     return builder.as_markup()
 
-
-def classes_kb(variant: str) -> InlineKeyboardMarkup:
+def classes_kb(variant: str, classes: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for class_name in CLASSES.get(variant, []):
+    for class_row in classes:
+        class_name = class_row["name"]
         builder.button(
             text=class_name, callback_data=f"class:{variant}:{class_name}"
         )
@@ -165,22 +166,27 @@ async def pick_area(callback: CallbackQuery) -> None:
     area_id = int(callback.data.split(":", 1)[1])
     await db.set_user_area(callback.from_user.id, area_id)
     photos = await db.get_variant_photos()
-    for variant in VARIANTS:
-        photo_id = photos.get(variant)
+    variants = await db.get_variants()
+    for variant in variants:
+        name = variant["name"]
+        photo_id = photos.get(name)
         if photo_id:
             await callback.message.answer_photo(
                 photo_id,
-                caption=f"Раздел Товар {variant}",
+                caption=f"Раздел Товар {name}",
             )
-    await callback.message.answer("Выберите вариант:", reply_markup=variants_kb())
+    await callback.message.answer(
+        "Выберите вариант:", reply_markup=variants_kb(variants)
+    )
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("variant:"))
 async def pick_variant(callback: CallbackQuery) -> None:
     variant = callback.data.split(":", 1)[1]
+    classes = await db.get_classes(variant)
     await callback.message.answer(
-        "Выберите классификацию:", reply_markup=classes_kb(variant)
+        "Выберите классификацию:", reply_markup=classes_kb(variant, classes)
     )
     await callback.answer()
 
@@ -238,14 +244,18 @@ async def back_to_areas(callback: CallbackQuery) -> None:
 @router.callback_query(F.data == "back:variants")
 async def back_to_variants(callback: CallbackQuery) -> None:
     photos = await db.get_variant_photos()
-    for variant in VARIANTS:
-        photo_id = photos.get(variant)
+    variants = await db.get_variants()
+    for variant in variants:
+        name = variant["name"]
+        photo_id = photos.get(name)
         if photo_id:
             await callback.message.answer_photo(
                 photo_id,
-                caption=f"Раздел Товар {variant}",
+                caption=f"Раздел Товар {name}",
             )
-    await callback.message.answer("Выберите вариант:", reply_markup=variants_kb())
+    await callback.message.answer(
+        "Выберите вариант:", reply_markup=variants_kb(variants)
+    )
     await callback.answer()
 
 
@@ -288,13 +298,15 @@ async def checkout_from_cart(callback: CallbackQuery) -> None:
         await callback.message.answer("Корзина пуста.")
         await callback.answer()
         return
-    await callback.message.answer(PAYMENT_DETAILS, reply_markup=payment_kb())
+    payment_details = await db.get_setting("payment_details") or PAYMENT_DETAILS
+    await callback.message.answer(payment_details, reply_markup=payment_kb())
     await callback.answer()
 
 
 @router.message(F.text == BTN.PAYMENT)
 async def show_payment(message: Message) -> None:
-    await message.answer(PAYMENT_DETAILS, reply_markup=payment_kb())
+    payment_details = await db.get_setting("payment_details") or PAYMENT_DETAILS
+    await message.answer(payment_details, reply_markup=payment_kb())
 
 
 @router.callback_query(F.data == "pay:submit")

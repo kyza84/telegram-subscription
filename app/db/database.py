@@ -4,7 +4,7 @@ from typing import Any
 
 import aiosqlite
 
-from app.config import AREAS, DB_PATH
+from app.config import AREAS, DB_PATH, DEFAULT_CLASSES, DEFAULT_VARIANTS
 
 
 async def _table_exists(db: aiosqlite.Connection, table: str) -> bool:
@@ -24,6 +24,12 @@ async def _table_has_column(
     rows = await cur.fetchall()
     await cur.close()
     return any(str(row[1]) == column for row in rows)
+
+async def _table_columns(db: aiosqlite.Connection, table: str) -> list[str]:
+    cur = await db.execute(f"PRAGMA table_info({table})")
+    rows = await cur.fetchall()
+    await cur.close()
+    return [str(row[1]) for row in rows]
 
 
 async def init_db() -> None:
@@ -122,6 +128,20 @@ async def init_db() -> None:
                 photo_file_id TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS variants (
+                name TEXT PRIMARY KEY,
+                sort_order INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS classes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                variant_name TEXT NOT NULL,
+                name TEXT NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(variant_name, name),
+                FOREIGN KEY (variant_name) REFERENCES variants(name) ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS reviews (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -139,8 +159,51 @@ async def init_db() -> None:
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(admin_group_id, admin_message_id)
             );
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
         )
+
+        if await _table_exists(db, "products_old"):
+            cur = await db.execute("SELECT COUNT(*) FROM products")
+            row = await cur.fetchone()
+            await cur.close()
+            if row and int(row[0]) == 0:
+                old_columns = await _table_columns(db, "products_old")
+                insert_columns = [
+                    "city_id",
+                    "area_id",
+                    "variant",
+                    "class",
+                    "title",
+                    "description",
+                    "price",
+                    "photo_file_id",
+                    "stock",
+                    "is_active",
+                    "sold_to_user_id",
+                    "sold_order_id",
+                    "sold_at",
+                ]
+                select_parts: list[str] = []
+                for col in insert_columns:
+                    if col in old_columns:
+                        select_parts.append(col)
+                    elif col == "variant":
+                        select_parts.append("'A'")
+                    elif col == "class":
+                        select_parts.append("'A-1'")
+                    elif col == "is_active":
+                        select_parts.append("1")
+                    else:
+                        select_parts.append("NULL")
+                await db.execute(
+                    f"INSERT INTO products ({', '.join(insert_columns)}) "
+                    f"SELECT {', '.join(select_parts)} FROM products_old"
+                )
 
         if await _table_exists(db, "products"):
             if not await _table_has_column(db, "products", "sold_to_user_id"):
@@ -159,6 +222,7 @@ async def init_db() -> None:
                     "ALTER TABLE users ADD COLUMN support_blocked INTEGER NOT NULL DEFAULT 0"
                 )
 
+        await _seed_variants_and_classes(db)
         await _seed_cities_and_areas(db)
         await db.commit()
 
@@ -200,6 +264,27 @@ async def _seed_cities_and_areas(db: aiosqlite.Connection) -> None:
         await cur.close()
         if cnt_row and int(cnt_row[0]) == 0:
             await db.execute("DELETE FROM cities WHERE id = ?", (city2_id,))
+
+async def _seed_variants_and_classes(db: aiosqlite.Connection) -> None:
+    for idx, name in enumerate(DEFAULT_VARIANTS, start=1):
+        await db.execute(
+            "INSERT OR IGNORE INTO variants (name, sort_order) VALUES (?, ?)",
+            (name, idx),
+        )
+
+    for variant, classes in DEFAULT_CLASSES.items():
+        await db.execute(
+            "INSERT OR IGNORE INTO variants (name, sort_order) VALUES (?, ?)",
+            (variant, 0),
+        )
+        for idx, class_name in enumerate(classes, start=1):
+            await db.execute(
+                """
+                INSERT OR IGNORE INTO classes (variant_name, name, sort_order)
+                VALUES (?, ?, ?)
+                """,
+                (variant, class_name, idx),
+            )
 
 
 async def _fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[aiosqlite.Row]:
@@ -313,6 +398,84 @@ async def get_variant_photos() -> dict[str, str]:
     rows = await _fetch_all("SELECT variant, photo_file_id FROM variant_photos")
     return {str(row["variant"]): str(row["photo_file_id"]) for row in rows}
 
+async def get_variants() -> list[aiosqlite.Row]:
+    return await _fetch_all(
+        "SELECT name, sort_order FROM variants ORDER BY sort_order, name"
+    )
+
+
+async def get_classes(variant: str) -> list[aiosqlite.Row]:
+    return await _fetch_all(
+        """
+        SELECT name, sort_order
+        FROM classes
+        WHERE variant_name = ?
+        ORDER BY sort_order, name
+        """,
+        (variant,),
+    )
+
+
+async def rename_area(area_id: int, new_name: str) -> None:
+    await _execute("UPDATE areas SET name = ? WHERE id = ?", (new_name, area_id))
+
+
+async def rename_variant(old_name: str, new_name: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN")
+        await db.execute(
+            "UPDATE variants SET name = ? WHERE name = ?",
+            (new_name, old_name),
+        )
+        await db.execute(
+            "UPDATE classes SET variant_name = ? WHERE variant_name = ?",
+            (new_name, old_name),
+        )
+        await db.execute(
+            "UPDATE products SET variant = ? WHERE variant = ?",
+            (new_name, old_name),
+        )
+        await db.execute(
+            "UPDATE variant_photos SET variant = ? WHERE variant = ?",
+            (new_name, old_name),
+        )
+        await db.commit()
+
+
+async def add_variant(name: str, sort_order: int = 0) -> None:
+    await _execute(
+        "INSERT INTO variants (name, sort_order) VALUES (?, ?)",
+        (name, sort_order),
+    )
+
+
+async def add_class(variant: str, class_name: str, sort_order: int = 0) -> None:
+    await _execute(
+        """
+        INSERT INTO classes (variant_name, name, sort_order)
+        VALUES (?, ?, ?)
+        """,
+        (variant, class_name, sort_order),
+    )
+
+
+async def rename_class(variant: str, old_name: str, new_name: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN")
+        await db.execute(
+            """
+            UPDATE classes
+            SET name = ?
+            WHERE variant_name = ? AND name = ?
+            """,
+            (new_name, variant, old_name),
+        )
+        await db.execute(
+            "UPDATE products SET class = ? WHERE variant = ? AND class = ?",
+            (new_name, variant, old_name),
+        )
+        await db.commit()
+
 
 async def add_product(
     *,
@@ -413,7 +576,25 @@ async def list_products(limit: int = 50) -> list[aiosqlite.Row]:
 
 
 async def delete_product(product_id: int) -> None:
-    await _execute("DELETE FROM products WHERE id = ?", (product_id,))
+    await _execute(
+        "UPDATE products SET is_active = 0, stock = 0 WHERE id = ?",
+        (product_id,),
+    )
+
+
+async def restore_order_products(order_id: int) -> None:
+    await _execute(
+        """
+        UPDATE products
+        SET stock = 1,
+            is_active = 1,
+            sold_to_user_id = NULL,
+            sold_order_id = NULL,
+            sold_at = NULL
+        WHERE sold_order_id = ?
+        """,
+        (order_id,),
+    )
 
 
 async def add_city(name: str) -> int:
@@ -429,8 +610,22 @@ async def add_city(name: str) -> int:
         return city_id
 
 
+async def add_area(city_id: int, name: str) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO areas (city_id, name) VALUES (?, ?)",
+            (city_id, name),
+        )
+        await db.commit()
+        return int(cur.lastrowid)
+
+
 async def delete_city(city_id: int) -> None:
     await _execute("DELETE FROM cities WHERE id = ?", (city_id,))
+
+
+async def delete_area(area_id: int) -> None:
+    await _execute("DELETE FROM areas WHERE id = ?", (area_id,))
 
 
 async def add_to_cart(user_id: int, product_id: int) -> bool:
@@ -655,6 +850,41 @@ async def add_review(user_id: int, order_id: int, text: str) -> None:
     )
 
 
+async def count_products_by_area(area_id: int) -> int:
+    row = await _fetch_one(
+        "SELECT COUNT(*) as c FROM products WHERE area_id = ?",
+        (area_id,),
+    )
+    return int(row["c"]) if row else 0
+
+
+async def count_products_by_variant(variant: str) -> int:
+    row = await _fetch_one(
+        "SELECT COUNT(*) as c FROM products WHERE variant = ?",
+        (variant,),
+    )
+    return int(row["c"]) if row else 0
+
+
+async def count_products_by_class(variant: str, class_name: str) -> int:
+    row = await _fetch_one(
+        "SELECT COUNT(*) as c FROM products WHERE variant = ? AND class = ?",
+        (variant, class_name),
+    )
+    return int(row["c"]) if row else 0
+
+
+async def delete_variant(name: str) -> None:
+    await _execute("DELETE FROM variants WHERE name = ?", (name,))
+
+
+async def delete_class(variant: str, class_name: str) -> None:
+    await _execute(
+        "DELETE FROM classes WHERE variant_name = ? AND name = ?",
+        (variant, class_name),
+    )
+
+
 async def save_support_thread(
     user_tg_id: int, admin_group_id: int, admin_message_id: int
 ) -> None:
@@ -707,4 +937,44 @@ async def get_recent_reviews(limit: int = 20) -> list[aiosqlite.Row]:
         LIMIT ?
         """,
         (limit,),
+    )
+
+
+async def get_setting(key: str) -> str | None:
+    row = await _fetch_one("SELECT value FROM settings WHERE key = ?", (key,))
+    if not row:
+        return None
+    return str(row["value"])
+
+
+async def set_setting(key: str, value: str) -> None:
+    await _execute(
+        """
+        INSERT INTO settings (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, value),
+    )
+
+
+async def get_payments_report() -> list[aiosqlite.Row]:
+    return await _fetch_all(
+        """
+        SELECT p.id as payment_id,
+               p.order_id,
+               p.user_id,
+               p.total,
+               p.status as payment_status,
+               p.created_at as payment_created_at,
+               p.processed_at as payment_processed_at,
+               o.status as order_status,
+               o.created_at as order_created_at,
+               u.username,
+               u.first_name
+        FROM payments p
+        LEFT JOIN orders o ON o.id = p.order_id
+        LEFT JOIN users u ON u.tg_id = p.user_id
+        ORDER BY p.id DESC
+        """
     )

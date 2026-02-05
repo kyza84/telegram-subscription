@@ -41,7 +41,10 @@ def _parse_admin_ids(value: str) -> list[int]:
 
 
 ADMIN_IDS = _parse_admin_ids(os.getenv("ADMIN_IDS", ""))
-ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID", "0") or 0)
+try:
+    ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_ID", "0") or 0)
+except ValueError:
+    ADMIN_GROUP_ID = 0
 
 DB_PATH = BASE_DIR / "data" / "shop.db"
 LOG_PATH = BASE_DIR / "logs" / "bot.log"
@@ -56,8 +59,8 @@ PAYMENT_DETAILS = (
 
 SUPPORT_TEXT = "Поддержка: напишите @your_support или support@example.com"
 
-VARIANTS = ["A", "B"]
-CLASSES = {
+DEFAULT_VARIANTS = ["A", "B"]
+DEFAULT_CLASSES = {
     "A": ["A-1", "A-2", "A-3", "A-4"],
     "B": ["B-1", "B-2", "B-3", "B-4"],
 }
@@ -78,9 +81,18 @@ class Buttons:
 
     ADMIN_ADD_PRODUCT: str = "Добавить товар"
     ADMIN_ADD_CITY: str = "Добавить город"
+    ADMIN_ADD_AREA: str = "Добавить местность"
     ADMIN_DELETE_CITY: str = "Удалить город"
+    ADMIN_DELETE_AREA: str = "Удалить местность"
     ADMIN_RENAME_CITY: str = "Переименовать город"
+    ADMIN_RENAME_AREA: str = "Переименовать местность"
     ADMIN_RENAME_PRODUCT: str = "Переименовать товар"
+    ADMIN_RENAME_VARIANT: str = "Переименовать вариант"
+    ADMIN_RENAME_CLASS: str = "Переименовать классификацию"
+    ADMIN_ADD_VARIANT: str = "Добавить вариант"
+    ADMIN_ADD_CLASS: str = "Добавить классификацию"
+    ADMIN_DELETE_VARIANT: str = "Удалить вариант"
+    ADMIN_DELETE_CLASS: str = "Удалить классификацию"
     ADMIN_VARIANT_PHOTO: str = "Фото варианта"
     ADMIN_USER_HISTORY: str = "История покупок"
     ADMIN_REVIEWS: str = "Отзывы"
@@ -88,8 +100,11 @@ class Buttons:
     ADMIN_PRODUCTS_LIST: str = "Ассортимент"
     ADMIN_PRODUCT_DELETE: str = "Удалить товар"
     ADMIN_LOGS: str = "Логи"
+    ADMIN_PAYMENT_DETAILS: str = "Реквизиты"
+    ADMIN_REPORTS: str = "Отчет"
     ADMIN_REQUESTS: str = "Заявки"
     ADMIN_STATS: str = "Статистика"
+    ADMIN_PANEL: str = "Админ-панель"
 
     CONFIRM: str = "✅ Подтвердить"
     REJECT: str = "❌ Отклонить"

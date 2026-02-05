@@ -3,4 +3,6 @@ venv/
 __pycache__/
 *.pyc
 logs/
+data/
 data/*.db
+data/*.csv
