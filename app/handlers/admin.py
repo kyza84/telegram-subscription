@@ -224,21 +224,21 @@ def admin_main_menu_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Каталог", callback_data="admin:section:catalog"
+                    text="Каталог товаров", callback_data="admin:section:catalog"
                 ),
                 InlineKeyboardButton(
-                    text="Локации", callback_data="admin:section:locations"
+                    text="Города и местности", callback_data="admin:section:locations"
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    text="Варианты/Классы",
+                    text="Категории и классификации",
                     callback_data="admin:section:variants",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="Покупки/Отчеты",
+                    text="Покупки и отчеты",
                     callback_data="admin:section:reports",
                 )
             ],
@@ -288,25 +288,52 @@ def admin_locations_menu_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="Города", callback_data="admin:locations:cities"
+                ),
+                InlineKeyboardButton(
+                    text="Местности", callback_data="admin:locations:areas"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text=BTN.BACK, callback_data="admin:menu:main"
+                )
+            ],
+        ]
+    )
+
+def admin_cities_menu_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
                     text=BTN.ADMIN_ADD_CITY, callback_data="admin:menu:add_city"
                 ),
                 InlineKeyboardButton(
-                    text=BTN.ADMIN_ADD_AREA, callback_data="admin:menu:add_area"
+                    text=BTN.ADMIN_RENAME_CITY, callback_data="admin:menu:rename_city"
                 ),
             ],
             [
                 InlineKeyboardButton(
                     text=BTN.ADMIN_DELETE_CITY,
                     callback_data="admin:menu:delete_city",
-                ),
-                InlineKeyboardButton(
-                    text=BTN.ADMIN_DELETE_AREA,
-                    callback_data="admin:menu:delete_area",
-                ),
+                )
             ],
             [
                 InlineKeyboardButton(
-                    text=BTN.ADMIN_RENAME_CITY, callback_data="admin:menu:rename_city"
+                    text=BTN.BACK, callback_data="admin:locations:back"
+                )
+            ],
+        ]
+    )
+
+
+def admin_areas_menu_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=BTN.ADMIN_ADD_AREA, callback_data="admin:menu:add_area"
                 ),
                 InlineKeyboardButton(
                     text=BTN.ADMIN_RENAME_AREA, callback_data="admin:menu:rename_area"
@@ -314,7 +341,13 @@ def admin_locations_menu_kb() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
-                    text=BTN.BACK, callback_data="admin:menu:main"
+                    text=BTN.ADMIN_DELETE_AREA,
+                    callback_data="admin:menu:delete_area",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=BTN.BACK, callback_data="admin:locations:back"
                 )
             ],
         ]
@@ -444,7 +477,7 @@ def variants_pick_kb(variants: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for variant in variants:
         name = variant["name"]
-        builder.button(text=f"Товар {name}", callback_data=f"admin:variant:{name}")
+        builder.button(text=f"Категория: {name}", callback_data=f"admin:variant:{name}")
     builder.adjust(2)
     return builder.as_markup()
 
@@ -473,6 +506,60 @@ def request_actions_kb(payment_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+def products_hide_kb(products: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for product in products:
+        title = product["title"]
+        price = format_price(int(product["price"]))
+        builder.button(
+            text=f"Удалить: {title} — {price}",
+            callback_data=f"admin:hide:{int(product['id'])}",
+        )
+    builder.button(text=BTN.BACK, callback_data="admin:menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def sold_products_kb(products: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for product in products:
+        sold_at = product["sold_at"] or "-"
+        builder.button(
+            text=f"#{int(product['id'])} {product['title']} ({sold_at})",
+            callback_data=f"admin:owner:{int(product['id'])}",
+        )
+    builder.button(text=BTN.BACK, callback_data="admin:menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def products_rename_kb(products: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for product in products:
+        status = "active" if int(product["is_active"] or 0) == 1 else "hidden"
+        builder.button(
+            text=f"#{int(product['id'])} {product['title']} [{status}]",
+            callback_data=f"admin:renameproduct:{int(product['id'])}",
+        )
+    builder.button(text=BTN.BACK, callback_data="admin:menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def user_history_pick_kb(users: list[dict]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for user in users:
+        user_id = int(user["tg_id"])
+        username = f"@{user['username']}" if user["username"] else "-"
+        orders_count = int(user["orders_count"] or 0)
+        builder.button(
+            text=f"{user_id} {username} | paid: {orders_count}",
+            callback_data=f"admin:historyuser:{user_id}",
+        )
+    builder.button(text=BTN.BACK, callback_data="admin:menu:main")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 @router.message(Command("admin"))
@@ -532,7 +619,43 @@ async def admin_section_locations(callback: CallbackQuery) -> None:
         await callback.answer("Доступ запрещен", show_alert=True)
         return
     await _clear_inline_keyboard(callback)
-    await callback.message.answer("Локации:", reply_markup=admin_locations_menu_kb())
+    await callback.message.answer(
+        "Управление городами и местностями. Выберите раздел:",
+        reply_markup=admin_locations_menu_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:locations:cities")
+async def admin_locations_cities(callback: CallbackQuery) -> None:
+    if not await is_admin(callback):
+        await callback.answer("Доступ запрещен", show_alert=True)
+        return
+    await _clear_inline_keyboard(callback)
+    await callback.message.answer("Города:", reply_markup=admin_cities_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:locations:areas")
+async def admin_locations_areas(callback: CallbackQuery) -> None:
+    if not await is_admin(callback):
+        await callback.answer("Доступ запрещен", show_alert=True)
+        return
+    await _clear_inline_keyboard(callback)
+    await callback.message.answer("Местности:", reply_markup=admin_areas_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin:locations:back")
+async def admin_locations_back(callback: CallbackQuery) -> None:
+    if not await is_admin(callback):
+        await callback.answer("Доступ запрещен", show_alert=True)
+        return
+    await _clear_inline_keyboard(callback)
+    await callback.message.answer(
+        "Управление городами и местностями. Выберите раздел:",
+        reply_markup=admin_locations_menu_kb(),
+    )
     await callback.answer()
 
 
@@ -640,9 +763,17 @@ async def admin_menu_rename_product(callback: CallbackQuery, state: FSMContext) 
     if not await is_admin(callback):
         await callback.answer("Доступ запрещен", show_alert=True)
         return
-    await state.set_state(AdminStates.rename_product_id)
+    await state.clear()
     await _clear_inline_keyboard(callback)
-    await callback.message.answer("Введите ID товара:")
+    products = await db.list_all_products(limit=100)
+    if not products:
+        await callback.message.answer("Список товаров пуст.")
+        await callback.answer()
+        return
+    await callback.message.answer(
+        "Выберите товар для переименования:",
+        reply_markup=products_rename_kb(products),
+    )
     await callback.answer()
 
 @router.callback_query(F.data == "admin:menu:rename_area")
@@ -763,9 +894,17 @@ async def admin_menu_user_history(callback: CallbackQuery, state: FSMContext) ->
     if not await is_admin(callback):
         await callback.answer("Доступ запрещен", show_alert=True)
         return
-    await state.set_state(AdminStates.user_history_id)
+    await state.clear()
     await _clear_inline_keyboard(callback)
-    await callback.message.answer("Введите Telegram ID пользователя:")
+    users = await db.list_paid_users(limit=50)
+    if not users:
+        await callback.message.answer("Пока нет оплаченных заказов.")
+        await callback.answer()
+        return
+    await callback.message.answer(
+        "Выберите пользователя:",
+        reply_markup=user_history_pick_kb(users),
+    )
     await callback.answer()
 
 
@@ -794,9 +933,17 @@ async def admin_menu_product_owner(callback: CallbackQuery, state: FSMContext) -
     if not await is_admin(callback):
         await callback.answer("Доступ запрещен", show_alert=True)
         return
-    await state.set_state(AdminStates.product_owner_id)
+    await state.clear()
     await _clear_inline_keyboard(callback)
-    await callback.message.answer("Введите ID товара:")
+    products = await db.list_sold_products(limit=50)
+    if not products:
+        await callback.message.answer("Пока нет купленных товаров.")
+        await callback.answer()
+        return
+    await callback.message.answer(
+        "Выберите товар из проданных:",
+        reply_markup=sold_products_kb(products),
+    )
     await callback.answer()
 
 
@@ -827,9 +974,17 @@ async def admin_menu_product_delete(callback: CallbackQuery, state: FSMContext) 
     if not await is_admin(callback):
         await callback.answer("Доступ запрещен", show_alert=True)
         return
-    await state.set_state(AdminStates.delete_product_id)
+    await state.clear()
     await _clear_inline_keyboard(callback)
-    await callback.message.answer("Введите ID товара для удаления:")
+    products = await db.list_products(limit=50)
+    if not products:
+        await callback.message.answer("В ассортименте нет доступных товаров.")
+        await callback.answer()
+        return
+    await callback.message.answer(
+        "Выберите товар, чтобы удалить из ассортимента (ID запоминать не нужно):",
+        reply_markup=products_hide_kb(products),
+    )
     await callback.answer()
 
 
@@ -1038,8 +1193,15 @@ async def admin_rename_product_start(message: Message, state: FSMContext) -> Non
     if not await is_admin(message):
         await message.answer("Доступ запрещен.")
         return
-    await state.set_state(AdminStates.rename_product_id)
-    await message.answer("Введите ID товара:")
+    await state.clear()
+    products = await db.list_all_products(limit=100)
+    if not products:
+        await message.answer("Список товаров пуст.")
+        return
+    await message.answer(
+        "Выберите товар для переименования:",
+        reply_markup=products_rename_kb(products),
+    )
 
 @router.message(F.text == BTN.ADMIN_RENAME_AREA)
 async def admin_rename_area_start(message: Message, state: FSMContext) -> None:
@@ -1131,8 +1293,15 @@ async def admin_user_history_start(message: Message, state: FSMContext) -> None:
     if not await is_admin(message):
         await message.answer("Доступ запрещен.")
         return
-    await state.set_state(AdminStates.user_history_id)
-    await message.answer("Введите Telegram ID пользователя:")
+    await state.clear()
+    users = await db.list_paid_users(limit=50)
+    if not users:
+        await message.answer("Пока нет оплаченных заказов.")
+        return
+    await message.answer(
+        "Выберите пользователя:",
+        reply_markup=user_history_pick_kb(users),
+    )
 
 
 @router.message(F.text == BTN.ADMIN_REVIEWS)
@@ -1186,8 +1355,15 @@ async def admin_product_delete_start(message: Message, state: FSMContext) -> Non
     if not await is_admin(message):
         await message.answer("Доступ запрещен.")
         return
-    await state.set_state(AdminStates.delete_product_id)
-    await message.answer("Введите ID товара для удаления:")
+    await state.clear()
+    products = await db.list_products(limit=50)
+    if not products:
+        await message.answer("В ассортименте нет доступных товаров.")
+        return
+    await message.answer(
+        "Выберите товар, чтобы удалить из ассортимента (ID запоминать не нужно):",
+        reply_markup=products_hide_kb(products),
+    )
 
 
 @router.message(F.text == BTN.ADMIN_LOGS)
@@ -1210,8 +1386,93 @@ async def admin_product_owner_start(message: Message, state: FSMContext) -> None
     if not await is_admin(message):
         await message.answer("Доступ запрещен.")
         return
-    await state.set_state(AdminStates.product_owner_id)
-    await message.answer("Введите ID товара:")
+    await state.clear()
+    products = await db.list_sold_products(limit=50)
+    if not products:
+        await message.answer("Пока нет купленных товаров.")
+        return
+    await message.answer(
+        "Выберите товар из проданных:",
+        reply_markup=sold_products_kb(products),
+    )
+
+
+@router.callback_query(F.data.startswith("admin:owner:"))
+async def admin_product_owner_pick(callback: CallbackQuery) -> None:
+    if not await is_admin(callback):
+        await callback.answer("Доступ запрещен", show_alert=True)
+        return
+    product_id = int(callback.data.split(":", 2)[2])
+    row = await db.get_product_owner(product_id)
+    if not row:
+        await callback.message.answer("Товар не найден.")
+        await callback.answer()
+        return
+    if row["sold_to_user_id"] is None:
+        await callback.message.answer(f"Товар #{product_id} ещё не куплен.")
+        await callback.answer()
+        return
+    username = f"@{row['username']}" if row["username"] else "-"
+    first_name = row["first_name"] or "-"
+    await _clear_inline_keyboard(callback)
+    await callback.message.answer(
+        "Покупатель товара:\n"
+        f"Товар: {row['title']} (ID {product_id})\n"
+        f"User ID: {row['sold_to_user_id']}\n"
+        f"Username: {username}\n"
+        f"First name: {first_name}\n"
+        f"Order ID: {row['sold_order_id']}\n"
+        f"Дата покупки: {row['sold_at']}"
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:renameproduct:"))
+async def admin_rename_product_pick_callback(
+    callback: CallbackQuery, state: FSMContext
+) -> None:
+    if not await is_admin(callback):
+        await callback.answer("Доступ запрещен", show_alert=True)
+        return
+    product_id = int(callback.data.split(":", 2)[2])
+    row = await db.get_product(product_id)
+    if not row:
+        await callback.message.answer("Товар не найден.")
+        await callback.answer()
+        return
+    await state.update_data(product_id=product_id)
+    await state.set_state(AdminStates.rename_product_name)
+    await _clear_inline_keyboard(callback)
+    await callback.message.answer("Введите новое название товара:")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin:historyuser:"))
+async def admin_user_history_pick(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await is_admin(callback):
+        await callback.answer("Доступ запрещен", show_alert=True)
+        return
+    user_id = int(callback.data.split(":", 2)[2])
+    rows = await db.get_user_purchase_history(user_id)
+    await _clear_inline_keyboard(callback)
+    if not rows:
+        await callback.message.answer("Покупок не найдено.")
+        await state.clear()
+        await callback.answer()
+        return
+    lines = []
+    current_order = None
+    for row in rows:
+        order_id = int(row["order_id"])
+        if current_order != order_id:
+            lines.append(
+                f"\nЗаказ #{order_id} от {row['created_at']} (сумма {format_price(int(row['total']))})"
+            )
+            current_order = order_id
+        lines.append(f"- {row['title']} x{row['quantity']}")
+    await callback.message.answer("История покупок:" + "\n".join(lines))
+    await state.clear()
+    await callback.answer()
 
 
 @router.message(F.text == BTN.ADMIN_REQUESTS)
@@ -2104,12 +2365,16 @@ async def admin_rename_product_pick(message: Message, state: FSMContext) -> None
         await message.answer("Доступ запрещен.")
         await state.clear()
         return
-    if not message.text.strip().isdigit():
-        await message.answer("ID должен быть числом.")
+    products = await db.list_all_products(limit=100)
+    if not products:
+        await message.answer("Список товаров пуст.")
+        await state.clear()
         return
-    await state.update_data(product_id=int(message.text.strip()))
-    await state.set_state(AdminStates.rename_product_name)
-    await message.answer("Введите новое название товара:")
+    await message.answer(
+        "Выберите товар для переименования:",
+        reply_markup=products_rename_kb(products),
+    )
+    await state.clear()
 
 
 @router.message(AdminStates.rename_product_name)
@@ -2134,26 +2399,15 @@ async def admin_user_history_show(message: Message, state: FSMContext) -> None:
         await message.answer("Доступ запрещен.")
         await state.clear()
         return
-    if not message.text.strip().isdigit():
-        await message.answer("ID должен быть числом.")
-        return
-    user_id = int(message.text.strip())
-    rows = await db.get_user_purchase_history(user_id)
-    if not rows:
-        await message.answer("Покупок не найдено.")
+    users = await db.list_paid_users(limit=50)
+    if not users:
+        await message.answer("Пока нет оплаченных заказов.")
         await state.clear()
         return
-    lines = []
-    current_order = None
-    for row in rows:
-        order_id = int(row["order_id"])
-        if current_order != order_id:
-            lines.append(
-                f"\nЗаказ #{order_id} от {row['created_at']} (сумма {format_price(int(row['total']))})"
-            )
-            current_order = order_id
-        lines.append(f"- {row['title']} x{row['quantity']}")
-    await message.answer("История покупок:" + "\n".join(lines))
+    await message.answer(
+        "Выберите пользователя:",
+        reply_markup=user_history_pick_kb(users),
+    )
     await state.clear()
 
 
@@ -2178,13 +2432,28 @@ async def admin_product_delete_finish(message: Message, state: FSMContext) -> No
         await message.answer("Доступ запрещен.")
         await state.clear()
         return
-    if not message.text.strip().isdigit():
-        await message.answer("ID должен быть числом.")
+    products = await db.list_products(limit=50)
+    if not products:
+        await message.answer("В ассортименте нет доступных товаров.")
+        await state.clear()
         return
-    product_id = int(message.text.strip())
-    await db.delete_product(product_id)
-    await message.answer(f"Товар #{product_id} скрыт из ассортимента.")
+    await message.answer(
+        "Выберите товар, чтобы удалить из ассортимента:",
+        reply_markup=products_hide_kb(products),
+    )
     await state.clear()
+
+
+@router.callback_query(F.data.startswith("admin:hide:"))
+async def admin_product_hide_pick(callback: CallbackQuery) -> None:
+    if not await is_admin(callback):
+        await callback.answer("Доступ запрещен", show_alert=True)
+        return
+    product_id = int(callback.data.split(":", 2)[2])
+    await db.delete_product(product_id)
+    await _clear_inline_keyboard(callback)
+    await callback.message.answer(f"Товар #{product_id} удален из ассортимента.")
+    await callback.answer()
 
 
 @router.callback_query(AdminStates.variant_photo_pick, F.data.startswith("admin:variant:"))
@@ -2222,29 +2491,14 @@ async def admin_product_owner_show(message: Message, state: FSMContext) -> None:
         await message.answer("Доступ запрещен.")
         await state.clear()
         return
-    if not message.text.strip().isdigit():
-        await message.answer("ID должен быть числом.")
-        return
-    product_id = int(message.text.strip())
-    row = await db.get_product_owner(product_id)
-    if not row:
-        await message.answer("Товар не найден.")
+    products = await db.list_sold_products(limit=50)
+    if not products:
+        await message.answer("Пока нет купленных товаров.")
         await state.clear()
         return
-    if row["sold_to_user_id"] is None:
-        await message.answer(f"Товар #{product_id} ещё не куплен.")
-        await state.clear()
-        return
-    username = f"@{row['username']}" if row["username"] else "-"
-    first_name = row["first_name"] or "-"
     await message.answer(
-        "Покупатель товара:\n"
-        f"Товар: {row['title']} (ID {product_id})\n"
-        f"User ID: {row['sold_to_user_id']}\n"
-        f"Username: {username}\n"
-        f"First name: {first_name}\n"
-        f"Order ID: {row['sold_order_id']}\n"
-        f"Дата покупки: {row['sold_at']}"
+        "Выберите товар из проданных:",
+        reply_markup=sold_products_kb(products),
     )
     await state.clear()
 

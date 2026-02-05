@@ -58,7 +58,7 @@ def variants_kb(variants: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for variant in variants:
         name = variant["name"]
-        builder.button(text=f"Товар {name}", callback_data=f"variant:{name}")
+        builder.button(text=f"Категория: {name}", callback_data=f"variant:{name}")
     builder.button(text=BTN.BACK, callback_data="back:areas")
     builder.adjust(2)
     return builder.as_markup()
@@ -173,7 +173,7 @@ async def pick_area(callback: CallbackQuery) -> None:
         if photo_id:
             await callback.message.answer_photo(
                 photo_id,
-                caption=f"Раздел Товар {name}",
+                caption=f"Категория: {name}",
             )
     await callback.message.answer(
         "Выберите вариант:", reply_markup=variants_kb(variants)
@@ -251,7 +251,7 @@ async def back_to_variants(callback: CallbackQuery) -> None:
         if photo_id:
             await callback.message.answer_photo(
                 photo_id,
-                caption=f"Раздел Товар {name}",
+                caption=f"Категория: {name}",
             )
     await callback.message.answer(
         "Выберите вариант:", reply_markup=variants_kb(variants)

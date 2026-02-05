@@ -59,24 +59,117 @@ PAYMENT_DETAILS = (
 
 SUPPORT_TEXT = "Поддержка: напишите @your_support или support@example.com"
 
-DEFAULT_VARIANTS = ["A", "B"]
+DEFAULT_CITIES = ["Киев", "Львов"]
+
+DEFAULT_VARIANTS = ["Электроника", "Аксессуары"]
 DEFAULT_CLASSES = {
-    "A": ["A-1", "A-2", "A-3", "A-4"],
-    "B": ["B-1", "B-2", "B-3", "B-4"],
+    "Электроника": ["Смартфоны", "Наушники", "Гаджеты"],
+    "Аксессуары": ["Кабели", "Зарядки", "Чехлы"],
 }
 
-AREAS = ["Местность 1", "Местность 2", "Местность 3", "Местность 4"]
+AREAS = ["Центр", "Север", "Юг", "Запад"]
+
+TEST_PRODUCTS = [
+    {
+        "city": "Киев",
+        "area": "Центр",
+        "variant": "Электроника",
+        "class": "Смартфоны",
+        "title": "Smart X1 128GB",
+        "description": "Экран 6.5\", NFC, быстрый заряд.",
+        "price": 9999,
+        "photo_url": "https://placehold.co/600x400/png?text=Smart+X1",
+        "stock": 1,
+    },
+    {
+        "city": "Киев",
+        "area": "Север",
+        "variant": "Электроника",
+        "class": "Смартфоны",
+        "title": "Smart Lite 64GB",
+        "description": "Легкий корпус, батарея на 2 дня.",
+        "price": 6999,
+        "photo_url": "https://placehold.co/600x400/png?text=Smart+Lite",
+        "stock": 1,
+    },
+    {
+        "city": "Киев",
+        "area": "Юг",
+        "variant": "Электроника",
+        "class": "Наушники",
+        "title": "AirBeat Pro",
+        "description": "Шумоподавление, до 24 часов работы.",
+        "price": 2599,
+        "photo_url": "https://placehold.co/600x400/png?text=AirBeat+Pro",
+        "stock": 1,
+    },
+    {
+        "city": "Львов",
+        "area": "Центр",
+        "variant": "Электроника",
+        "class": "Гаджеты",
+        "title": "Watch Fit 2",
+        "description": "Умные уведомления и спорт-режимы.",
+        "price": 3499,
+        "photo_url": "https://placehold.co/600x400/png?text=Watch+Fit+2",
+        "stock": 1,
+    },
+    {
+        "city": "Львов",
+        "area": "Север",
+        "variant": "Аксессуары",
+        "class": "Кабели",
+        "title": "USB-C кабель 1.5 м",
+        "description": "Нейлоновая оплетка, усиленные коннекторы.",
+        "price": 299,
+        "photo_url": "https://placehold.co/600x400/png?text=USB-C+Cable",
+        "stock": 1,
+    },
+    {
+        "city": "Львов",
+        "area": "Юг",
+        "variant": "Аксессуары",
+        "class": "Зарядки",
+        "title": "Зарядка 30W",
+        "description": "Быстрая зарядка для смартфонов и планшетов.",
+        "price": 699,
+        "photo_url": "https://placehold.co/600x400/png?text=Charger+30W",
+        "stock": 1,
+    },
+    {
+        "city": "Киев",
+        "area": "Запад",
+        "variant": "Аксессуары",
+        "class": "Чехлы",
+        "title": "Чехол Slim для Smart X1",
+        "description": "Матовый, защита камеры и краев.",
+        "price": 399,
+        "photo_url": "https://placehold.co/600x400/png?text=Slim+Case",
+        "stock": 1,
+    },
+    {
+        "city": "Львов",
+        "area": "Запад",
+        "variant": "Электроника",
+        "class": "Наушники",
+        "title": "SoundDots Mini",
+        "description": "Компактные, зарядка от кейса.",
+        "price": 1299,
+        "photo_url": "https://placehold.co/600x400/png?text=SoundDots",
+        "stock": 1,
+    },
+]
 
 
 @dataclass(frozen=True)
 class Buttons:
-    CATALOG: str = "Каталог"
+    CATALOG: str = "Каталог товаров"
     CART: str = "Корзина"
-    PAYMENT: str = "Оплата"
+    PAYMENT: str = "Оплата и реквизиты"
     SUPPORT: str = "Поддержка"
 
-    CLEAR_CART: str = "Очистить"
-    CHECKOUT: str = "Оформить"
+    CLEAR_CART: str = "Очистить корзину"
+    CHECKOUT: str = "Оформить заказ"
     I_PAID: str = "Я оплатил"
 
     ADMIN_ADD_PRODUCT: str = "Добавить товар"
@@ -97,13 +190,13 @@ class Buttons:
     ADMIN_USER_HISTORY: str = "История покупок"
     ADMIN_REVIEWS: str = "Отзывы"
     ADMIN_PRODUCT_OWNER: str = "Кто купил товар"
-    ADMIN_PRODUCTS_LIST: str = "Ассортимент"
+    ADMIN_PRODUCTS_LIST: str = "Текущий ассортимент"
     ADMIN_PRODUCT_DELETE: str = "Удалить товар"
-    ADMIN_LOGS: str = "Логи"
-    ADMIN_PAYMENT_DETAILS: str = "Реквизиты"
-    ADMIN_REPORTS: str = "Отчет"
-    ADMIN_REQUESTS: str = "Заявки"
-    ADMIN_STATS: str = "Статистика"
+    ADMIN_LOGS: str = "Логи бота"
+    ADMIN_PAYMENT_DETAILS: str = "Реквизиты оплаты"
+    ADMIN_REPORTS: str = "Отчет по оплатам"
+    ADMIN_REQUESTS: str = "Заявки на оплату"
+    ADMIN_STATS: str = "Статистика продаж"
     ADMIN_PANEL: str = "Админ-панель"
 
     CONFIRM: str = "✅ Подтвердить"

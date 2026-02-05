@@ -4,7 +4,14 @@ from typing import Any
 
 import aiosqlite
 
-from app.config import AREAS, DB_PATH, DEFAULT_CLASSES, DEFAULT_VARIANTS
+from app.config import (
+    AREAS,
+    DB_PATH,
+    DEFAULT_CLASSES,
+    DEFAULT_CITIES,
+    DEFAULT_VARIANTS,
+    TEST_PRODUCTS,
+)
 
 
 async def _table_exists(db: aiosqlite.Connection, table: str) -> bool:
@@ -224,6 +231,7 @@ async def init_db() -> None:
 
         await _seed_variants_and_classes(db)
         await _seed_cities_and_areas(db)
+        await _seed_products(db)
         await db.commit()
 
 
@@ -235,7 +243,7 @@ async def _seed_cities_and_areas(db: aiosqlite.Connection) -> None:
     if count_row and int(count_row[0]) == 0:
         await db.executemany(
             "INSERT INTO cities (name) VALUES (?)",
-            [("City 1",)],
+            [(name,) for name in DEFAULT_CITIES],
         )
 
     cur = await db.execute("SELECT id FROM cities ORDER BY id")
@@ -250,7 +258,7 @@ async def _seed_cities_and_areas(db: aiosqlite.Connection) -> None:
                 (city_id, area_name),
             )
 
-    # Optional cleanup of default City 2 if it exists and has no products
+    # Optional cleanup of old demo cities from previous versions
     cur = await db.execute("SELECT id FROM cities WHERE name = ?", ("City 2",))
     city2 = await cur.fetchone()
     await cur.close()
@@ -285,6 +293,74 @@ async def _seed_variants_and_classes(db: aiosqlite.Connection) -> None:
                 """,
                 (variant, class_name, idx),
             )
+
+
+async def _seed_products(db: aiosqlite.Connection) -> None:
+    cur = await db.execute("SELECT COUNT(*) FROM products")
+    count_row = await cur.fetchone()
+    await cur.close()
+    if count_row and int(count_row[0]) > 0:
+        return
+
+    async def get_or_create_city_id(name: str) -> int:
+        cur_local = await db.execute(
+            "SELECT id FROM cities WHERE name = ?",
+            (name,),
+        )
+        row = await cur_local.fetchone()
+        await cur_local.close()
+        if row:
+            return int(row[0])
+        cur_local = await db.execute(
+            "INSERT INTO cities (name) VALUES (?)",
+            (name,),
+        )
+        city_id = int(cur_local.lastrowid)
+        for area_name in AREAS:
+            await db.execute(
+                "INSERT OR IGNORE INTO areas (city_id, name) VALUES (?, ?)",
+                (city_id, area_name),
+            )
+        return city_id
+
+    async def get_or_create_area_id(city_id: int, name: str) -> int:
+        cur_local = await db.execute(
+            "SELECT id FROM areas WHERE city_id = ? AND name = ?",
+            (city_id, name),
+        )
+        row = await cur_local.fetchone()
+        await cur_local.close()
+        if row:
+            return int(row[0])
+        cur_local = await db.execute(
+            "INSERT INTO areas (city_id, name) VALUES (?, ?)",
+            (city_id, name),
+        )
+        return int(cur_local.lastrowid)
+
+    for item in TEST_PRODUCTS:
+        city_id = await get_or_create_city_id(item["city"])
+        area_id = await get_or_create_area_id(city_id, item["area"])
+        await db.execute(
+            """
+            INSERT INTO products (
+                city_id, area_id, variant, class, title, description, price, photo_file_id, stock,
+                sold_to_user_id, sold_order_id, sold_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+            """,
+            (
+                city_id,
+                area_id,
+                item["variant"],
+                item["class"],
+                item["title"],
+                item["description"],
+                int(item["price"]),
+                item["photo_url"],
+                int(item.get("stock", 1)),
+            ),
+        )
 
 
 async def _fetch_all(query: str, params: tuple[Any, ...] = ()) -> list[aiosqlite.Row]:
@@ -575,6 +651,51 @@ async def list_products(limit: int = 50) -> list[aiosqlite.Row]:
     )
 
 
+async def list_sold_products(limit: int = 50) -> list[aiosqlite.Row]:
+    return await _fetch_all(
+        """
+        SELECT id, title, sold_to_user_id, sold_order_id, sold_at
+        FROM products
+        WHERE sold_to_user_id IS NOT NULL
+        ORDER BY sold_at DESC, id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+
+async def list_all_products(limit: int = 100) -> list[aiosqlite.Row]:
+    return await _fetch_all(
+        """
+        SELECT id, title, price, stock, is_active, sold_to_user_id
+        FROM products
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+
+async def list_paid_users(limit: int = 50) -> list[aiosqlite.Row]:
+    return await _fetch_all(
+        """
+        SELECT
+            o.user_id AS tg_id,
+            u.username,
+            u.first_name,
+            COUNT(*) AS orders_count,
+            MAX(o.created_at) AS last_paid_at
+        FROM orders o
+        LEFT JOIN users u ON u.tg_id = o.user_id
+        WHERE o.status = 'paid'
+        GROUP BY o.user_id, u.username, u.first_name
+        ORDER BY last_paid_at DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+
+
 async def delete_product(product_id: int) -> None:
     await _execute(
         "UPDATE products SET is_active = 0, stock = 0 WHERE id = ?",
@@ -852,7 +973,11 @@ async def add_review(user_id: int, order_id: int, text: str) -> None:
 
 async def count_products_by_area(area_id: int) -> int:
     row = await _fetch_one(
-        "SELECT COUNT(*) as c FROM products WHERE area_id = ?",
+        """
+        SELECT COUNT(*) as c
+        FROM products
+        WHERE area_id = ? AND is_active = 1 AND COALESCE(stock, 0) >= 1
+        """,
         (area_id,),
     )
     return int(row["c"]) if row else 0
@@ -860,7 +985,11 @@ async def count_products_by_area(area_id: int) -> int:
 
 async def count_products_by_variant(variant: str) -> int:
     row = await _fetch_one(
-        "SELECT COUNT(*) as c FROM products WHERE variant = ?",
+        """
+        SELECT COUNT(*) as c
+        FROM products
+        WHERE variant = ? AND is_active = 1 AND COALESCE(stock, 0) >= 1
+        """,
         (variant,),
     )
     return int(row["c"]) if row else 0
@@ -868,7 +997,11 @@ async def count_products_by_variant(variant: str) -> int:
 
 async def count_products_by_class(variant: str, class_name: str) -> int:
     row = await _fetch_one(
-        "SELECT COUNT(*) as c FROM products WHERE variant = ? AND class = ?",
+        """
+        SELECT COUNT(*) as c
+        FROM products
+        WHERE variant = ? AND class = ? AND is_active = 1 AND COALESCE(stock, 0) >= 1
+        """,
         (variant, class_name),
     )
     return int(row["c"]) if row else 0
